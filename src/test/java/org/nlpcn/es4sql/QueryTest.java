@@ -54,6 +54,18 @@ public class QueryTest {
 		}
 	}
 
+	@Test
+	public void selectFieldWithSpace() throws IOException, SqlParseException, SQLFeatureNotSupportedException {
+		String[] arr = new String[] {"test field"};
+		Set expectedSource = new HashSet(Arrays.asList(arr));
+
+		SearchHits response = query(String.format("SELECT `test field` FROM %s/phrase_2", TEST_INDEX));
+		SearchHit[] hits = response.getHits();
+		for(SearchHit hit : hits) {
+			Assert.assertEquals(expectedSource, hit.getSource().keySet());
+		}
+	}
+
 
 	// TODO field aliases is not supported currently. it might be possible to change field names after the query already executed.
 	/*
@@ -290,6 +302,22 @@ public class QueryTest {
 		}
 	}
 
+    @Test
+    public void dateSearchBraces() throws IOException, SqlParseException, SQLFeatureNotSupportedException, ParseException {
+        DateTimeFormatter formatter = DateTimeFormat.forPattern(DATE_FORMAT);
+        DateTime dateToCompare = new DateTime(2015, 1, 15, 0, 0, 0);
+
+        SearchHits response = query(String.format("SELECT insert_time FROM %s/odbc WHERE insert_time < {ts '2015-03-15 00:00:00.000'}", TEST_INDEX));
+        SearchHit[] hits = response.getHits();
+        for(SearchHit hit : hits) {
+            Map<String, Object> source = hit.getSource();
+            DateTime insertTime = formatter.parseDateTime((String) source.get("insert_time"));
+
+            String errorMessage = String.format("insert_time must be smaller then 2015-03-15. found: %s", insertTime);
+            Assert.assertTrue(errorMessage, insertTime.isBefore(dateToCompare));
+        }
+    }
+
 
 	@Test
 	public void dateBetweenSearch() throws IOException, SqlParseException, SQLFeatureNotSupportedException {
@@ -387,6 +415,40 @@ public class QueryTest {
 		Collections.sort(sortedAges, Collections.reverseOrder());
 		Assert.assertTrue("The list is not ordered descending", sortedAges.equals(ages));
 	}
+
+
+	@Test
+	public void orderByAscFieldWithSpaceTest() throws IOException, SqlParseException, SQLFeatureNotSupportedException {
+		SearchHits response = query(String.format("SELECT * FROM %s/phrase_2 ORDER BY `test field` ASC LIMIT 1000", TEST_INDEX));
+		SearchHit[] hits = response.getHits();
+
+		ArrayList<Integer> testFields = new ArrayList<Integer>();
+		for(SearchHit hit : hits) {
+			testFields.add((int)hit.getSource().get("test field"));
+		}
+
+		ArrayList<Integer> sortedTestFields = (ArrayList<Integer>)testFields.clone();
+		Collections.sort(sortedTestFields);
+		Assert.assertTrue("The list is not ordered ascending", sortedTestFields.equals(testFields));
+	}
+
+    @Test
+    public void testMultipartWhere() throws IOException, SqlParseException, SQLFeatureNotSupportedException{
+        SearchHits response = query(String.format("SELECT * FROM %s/account WHERE (firstname LIKE 'opal' OR firstname like 'rodriquez') AND (state like 'oh' OR state like 'hi')", TEST_INDEX));
+        Assert.assertEquals(2, response.getTotalHits());
+    }
+
+    @Test
+    public void testMultipartWhere2() throws IOException, SqlParseException, SQLFeatureNotSupportedException{
+        SearchHits response = query(String.format("SELECT * FROM %s/account where ((account_number > 200 and account_number < 300) or gender like 'm') and (state like 'hi' or address like 'avenue')", TEST_INDEX));
+        Assert.assertEquals(127, response.getTotalHits());
+    }
+
+    @Test
+    public void testMultipartWhere3() throws IOException, SqlParseException, SQLFeatureNotSupportedException{
+        SearchHits response = query(String.format("SELECT * FROM %s/account where ((account_number > 25 and account_number < 75) and age >35 ) and (state like 'md' or (address like 'avenue' or address like 'street'))", TEST_INDEX));
+        Assert.assertEquals(7, response.getTotalHits());
+    }
 
 	private SearchHits query(String query) throws SqlParseException, SQLFeatureNotSupportedException, SQLFeatureNotSupportedException {
 		SearchDao searchDao = MainTestSuite.getSearchDao();
